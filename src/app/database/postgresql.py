@@ -1,5 +1,6 @@
 import psycopg2
 from app.models.embedding import encode_text, vector_to_pg_format
+from app.config.setting import DB_CONFIG
 
 class PostgresDB:
     _instance = None  # Singleton pattern
@@ -23,11 +24,11 @@ class PostgresDB:
         
         try:
             self.conn = psycopg2.connect(
-                dbname="pgvector",
-                user="vodanhday", 
-                password="123456", 
-                host="localhost",
-                port="5432"
+                dbname=DB_CONFIG["database"],
+                user=DB_CONFIG["user"], 
+                password=DB_CONFIG["password"], 
+                host=DB_CONFIG["host"],
+                port=DB_CONFIG["port"]
             )
             self.cursor = self.conn.cursor()
             print("PostgreSQL connection established")

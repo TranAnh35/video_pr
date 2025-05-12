@@ -3,7 +3,7 @@ import hashlib
 from app.database.minio import get_storage, MinioStorage
 from app.database.postgresql import get_db, save_image
 from app.utils.image_metadata import extract_image_metadata
-
+from app.config.setting import MINIO_CONFIG
 
 class ImageConnector:
     _instance = None  # Singleton pattern
@@ -93,7 +93,7 @@ class ImageConnector:
             
             # Upload lên Minio nếu chưa tồn tại
             storage = MinioStorage.get_instance()
-            success = storage.upload_object("images", unique_key, image_path)
+            success = storage.upload_object(MINIO_CONFIG["bucket_name"], unique_key, image_path)
             
             if not success:
                 print(f"Không thể upload hình ảnh: {image_path}")
@@ -117,7 +117,7 @@ class ImageConnector:
         if len(query) > 40 and '.' in query:
             # Lấy thẳng từ MinIO
             storage = get_storage()
-            image_path = storage.get_object("images", query)
+            image_path = storage.get_object(MINIO_CONFIG["bucket_name"], query)
             
             # Cập nhật cache nếu tìm thấy
             if image_path:
@@ -153,7 +153,7 @@ class ImageConnector:
         print(f"Tìm thấy ảnh với key: {image_key}")
         
         # Lấy file ảnh từ MinIO - thời gian được đo trong hàm get_object
-        image_path = storage.get_object("images", image_key)
+        image_path = storage.get_object(MINIO_CONFIG["bucket_name"], image_key)
         
         # Lưu kết quả vào cache
         if image_path:

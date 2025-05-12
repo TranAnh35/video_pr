@@ -1,5 +1,6 @@
 from minio import Minio
 import tempfile
+from app.config.setting import MINIO_CONFIG
 
 
 class MinioStorage:
@@ -22,10 +23,10 @@ class MinioStorage:
         
         try:
             self.client = Minio(
-                "localhost:9000",
-                access_key="NFKGAXSUufDy19LLfndI",
-                secret_key="4bbeJj1cjSoBfqZlEqh2HUg0GB4Zk3osroBrxsi5",
-                secure=False
+                endpoint=MINIO_CONFIG["endpoint"],
+                access_key=MINIO_CONFIG["access_key"],
+                secret_key=MINIO_CONFIG["secret_key"],
+                secure=MINIO_CONFIG["secure"]
             )
             print("MinIO connection established")
         except Exception as e:

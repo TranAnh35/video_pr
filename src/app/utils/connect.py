@@ -1,9 +1,13 @@
 import os
 import hashlib
 from app.database.minio import get_storage, MinioStorage
+import logging
 from app.database.postgresql import get_db, save_image
 from app.utils.image_metadata import extract_image_metadata
 from app.config.setting import MINIO_CONFIG
+
+import logging
+logger = logging.getLogger(__name__)
 
 class ImageConnector:
     _instance = None  # Singleton pattern
@@ -56,108 +60,92 @@ class ImageConnector:
             str: "DUPLICATE:{unique_key}" nếu file đã tồn tại
         """
         try:
-            # Kiểm tra file tồn tại
             if not os.path.exists(image_path):
-                print(f"File không tồn tại: {image_path}")
+                logger.error(f"File không tồn tại: {image_path}")
                 return None
             
-            # Lấy tên file để hiển thị log
             file_name = os.path.basename(image_path)
             
-            # Tính toán content hash từ nội dung file
             content_hash = self._calculate_file_hash(image_path)
             
-            # Lấy phần mở rộng của file để giữ lại trong key
             _, file_ext = os.path.splitext(file_name)
             if not file_ext:
                 file_ext = ".jpg"  # Mặc định nếu không có phần mở rộng
             
-            # Tạo unique key dựa trên content hash
             unique_key = f"{content_hash}{file_ext}"
             
-            # Kiểm tra xem cần bỏ qua việc kiểm tra trùng lặp không
             skip_check = os.environ.get("SKIP_DUPLICATE_CHECK", "0") == "1"
             
-            # Kiểm tra xem file đã tồn tại trong database chưa
             if not skip_check:
                 db = get_db()
                 if db.is_connected():
                     exists = db.check_image_exists(unique_key)
                     if exists:
-                        print(f"Hình ảnh '{file_name}' đã tồn tại trong database với hash: {content_hash}")
-                        
-                        # Thêm caption mới cho ảnh đã tồn tại
+                        logger.info(f"Hình ảnh '{file_name}' đã tồn tại trong database với hash: {content_hash}")
                         db.add_caption_to_image(unique_key, caption)
-                        
                         return f"DUPLICATE:{unique_key}"
             
-            # Upload lên Minio nếu chưa tồn tại
             storage = MinioStorage.get_instance()
             success = storage.upload_object(MINIO_CONFIG["bucket_name"], unique_key, image_path)
             
             if not success:
-                print(f"Không thể upload hình ảnh: {image_path}")
+                logger.error(f"Không thể upload hình ảnh: {image_path}")
                 return None
             
-            # Lấy metadata
             metadata = extract_image_metadata(image_path)
             
-            # Lưu vào PostgreSQL
             save_image(unique_key, metadata, caption)
+            logger.info(f"Đã upload và lưu metadata cho ảnh: {unique_key}")
             
             return unique_key
         except Exception as e:
-            print(f"Lỗi khi upload hình ảnh và lưu caption: {e}")
+            logger.error(f"Lỗi khi upload hình ảnh và lưu caption: {e}")
             return None
     
     def get_image(self, query):
         """Lấy hình ảnh từ database dựa trên caption hoặc image_key"""
         
-        # Nếu query có vẻ như là một image_key (dạng hash + extension)
         if len(query) > 40 and '.' in query:
-            # Lấy thẳng từ MinIO
             storage = get_storage()
             image_path = storage.get_object(MINIO_CONFIG["bucket_name"], query)
             
-            # Cập nhật cache nếu tìm thấy
             if image_path:
                 self._image_cache[query] = image_path
+                logger.info(f"Lấy ảnh trực tiếp theo image_key: {query}")
+            else:
+                logger.warning(f"Không tìm thấy ảnh với image_key: {query}")
             
             return image_path
         
-        # Kiểm tra xem caption đã có trong cache chưa
         if query in self._image_cache:
             cache_path = self._image_cache[query]
-            # Kiểm tra xem file cache còn tồn tại không
             if os.path.exists(cache_path):
                 result = cache_path
-                print(f"Image cache hit: Sử dụng hình ảnh từ cache: {cache_path}")
+                logger.info(f"Image cache hit: Sử dụng hình ảnh từ cache: {cache_path}")
                 return result
             else:
-                # Nếu file không tồn tại, xóa khỏi cache
                 del self._image_cache[query]
+                logger.warning(f"Cache bị stale, file không còn tồn tại: {cache_path}")
         
         db = get_db()
         storage = get_storage()
         
-        # Tìm kiếm hình ảnh theo caption - thời gian được đo trong hàm search_image_by_caption
         results = db.search_image_by_caption(query)
         
-        # Kiểm tra xem có kết quả trả về không
         if not results:
-            print(f"Không tìm thấy ảnh phù hợp với caption: '{query}'")
+            logger.warning(f"Không tìm thấy ảnh phù hợp với caption: '{query}'")
             return None
         
-        # Lấy image_key từ kết quả tìm kiếm đầu tiên
         image_key = results[0][1]
-        print(f"Tìm thấy ảnh với key: {image_key}")
+        logger.info(f"Tìm thấy ảnh với key: {image_key}")
         
-        # Lấy file ảnh từ MinIO - thời gian được đo trong hàm get_object
         image_path = storage.get_object(MINIO_CONFIG["bucket_name"], image_key)
         
-        # Lưu kết quả vào cache
         if image_path:
             self._image_cache[query] = image_path
+            logger.info(f"Đã lấy ảnh từ MinIO và cache lại với caption: '{query}'")
+        else:
+            logger.error(f"Không lấy được ảnh từ MinIO với key: {image_key}")
         
         return image_path
 

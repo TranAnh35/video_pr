@@ -1,7 +1,9 @@
+import logging
 from minio import Minio
 import tempfile
 from app.config.setting import MINIO_CONFIG
 
+logger = logging.getLogger(__name__)
 
 class MinioStorage:
     _instance = None  # Singleton pattern
@@ -28,9 +30,9 @@ class MinioStorage:
                 secret_key=MINIO_CONFIG["secret_key"],
                 secure=MINIO_CONFIG["secure"]
             )
-            print("MinIO connection established")
+            logger.info("MinIO connection established")
         except Exception as e:
-            print(f"MinIO connection error: {e}")
+            logger.error(f"MinIO connection error: {e}")
             print("Continuing without MinIO connection...")
     
     def is_connected(self):
@@ -87,14 +89,13 @@ def get_storage():
         _storage_instance = MinioStorage.get_instance()
     return _storage_instance
 
-# Biến tương thích với code cũ
-minio_client = None  # Được sử dụng bởi code cũ, nhưng không còn cần thiết
-
 def upload_object(bucket_name, image_key, image_path):
     """Upload object (compatibility function)"""
+    logger.info(f"Uploading object: bucket={bucket_name}, key={image_key}, path={image_path}")
     return get_storage().upload_object(bucket_name, image_key, image_path)
 
 def get_object(bucket_name, image_key):
     """Get object (compatibility function)"""
+    logger.info(f"Getting object: bucket={bucket_name}, key={image_key}")
     return get_storage().get_object(bucket_name, image_key)
         

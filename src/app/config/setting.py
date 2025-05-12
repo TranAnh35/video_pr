@@ -36,6 +36,7 @@ MINIO_CONFIG = {
     "endpoint": settings.minio_endpoint,
     "access_key": settings.ACCESS_KEY,
     "secret_key": settings.SECRET_KEY,
+    "bucket_name": settings.BUCKET_NAME,
     "secure": False
 }
 

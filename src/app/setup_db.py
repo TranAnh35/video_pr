@@ -74,14 +74,12 @@ def load_images_and_captions(caption_file, images_folder, limit=None):
                     
                 # Phân tách tên hình ảnh và caption
                 parts = content.split(',', 1)
-                print(parts)
                 if len(parts) != 2:
                     logger.warning(f"Định dạng không hợp lệ: {content}")
                     skipped += 1
                     continue
                     
                 image_name, caption = parts
-                print(caption)
                 image_path = os.path.join(images_folder, image_name)
                 
                 # Kiểm tra file hình ảnh tồn tại
@@ -100,7 +98,6 @@ def load_images_and_captions(caption_file, images_folder, limit=None):
                 # Kiểm tra kết quả
                 if result:
                     # Kiểm tra xem kết quả có phải là file đã tồn tại không
-                    # Các file trùng lặp sẽ được phát hiện và xử lý bởi hàm upload_image_and_save_caption
                     if result.startswith("DUPLICATE:"):
                         duplicated += 1
                         logger.debug(f"Phát hiện trùng lặp: {image_name}")
@@ -135,20 +132,27 @@ if __name__ == "__main__":
     parser.add_argument('--images', type=str, default='resource/Images',
                        help='Đường dẫn đến thư mục hình ảnh (default: resource/Images)')
     parser.add_argument('--limit', type=int, default=10,
-                       help='Số lượng hình ảnh tối đa cần tải (default: 100, 0 = tất cả)')
+                       help='Số lượng hình ảnh tối đa cần tải (default: 10, 0 = tất cả)')
     parser.add_argument('--init-only', action='store_true',
                        help='Chỉ khởi tạo database, không tải hình ảnh')
+    parser.add_argument('--upload-only', action='store_true',
+                       help='Chỉ tải hình ảnh lên, không khởi tạo lại database')
     
     args = parser.parse_args()
     
     # Xử lý limit = 0 là không giới hạn
     limit = None if args.limit == 0 else args.limit
     
-    # Khởi tạo database
-    if setup_database():
-        # Nếu không phải chỉ init db
-        if not args.init_only:
-            # Tải hình ảnh lên
-            load_images_and_captions(args.caption, args.images, limit=limit)
+    # Nếu là chế độ upload-only, bỏ qua bước khởi tạo database
+    if args.upload_only:
+        logger.info("Chế độ chỉ tải ảnh - Bỏ qua bước khởi tạo database")
+        load_images_and_captions(args.caption, args.images, limit=limit)
     else:
-        logger.error("Không thể tiếp tục do lỗi khởi tạo database")
+        # Khởi tạo database
+        if setup_database():
+            # Nếu không phải chỉ init db
+            if not args.init_only:
+                # Tải hình ảnh lên
+                load_images_and_captions(args.caption, args.images, limit=limit)
+        else:
+            logger.error("Không thể tiếp tục do lỗi khởi tạo database")

@@ -2,12 +2,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from pathlib import Path
 from app.config.logging_setup import setup_logging
-from app.web.api.router import router, UPLOAD_DIR, OUTPUT_DIR
+from app.web.api.routers import api_router
 import logging
 import subprocess
 import os
 import time
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -20,10 +22,16 @@ async def lifespan(app: FastAPI):
         logger.error("FFmpeg not found. Please ensure FFmpeg is installed.")
         raise RuntimeError("FFmpeg not found")
     
+    # Create directories if they don't exist
     for dir_path in [UPLOAD_DIR, OUTPUT_DIR]:
-        if not os.access(dir_path, os.W_OK):
-            logger.error(f"No write permission for directory: {dir_path}")
-            raise RuntimeError(f"No write permission for {dir_path}")
+        try:
+            dir_path.mkdir(parents=True, exist_ok=True)
+            if not os.access(str(dir_path), os.W_OK):
+                logger.error(f"No write permission for directory: {dir_path}")
+                raise RuntimeError(f"No write permission for {dir_path}")
+        except Exception as e:
+            logger.error(f"Error creating directory {dir_path}: {str(e)}")
+            raise
     
     yield
     logger.info("Shutting down Video Processing API...")
@@ -34,6 +42,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Configure directories
+UPLOAD_DIR = Path("uploads")
+OUTPUT_DIR = Path("output")
 
 # Add CORS middleware
 app.add_middleware(
@@ -53,7 +65,8 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
-app.include_router(router, prefix="/api")
+# Include API router
+app.include_router(api_router)
 
 @app.get("/", summary="Root endpoint", tags=["Root"])
 async def root():

@@ -1,0 +1,27 @@
+# Core web framework
+fastapi==0.115.12
+uvicorn==0.34.0
+python-multipart==0.0.20
+gunicorn==22.0.0
+
+# Database
+psycopg2-binary==2.9.10
+
+# MinIO client
+minio==7.2.15
+
+# Environment variables
+python-dotenv==1.1.0
+
+# Pydantic settings
+pydantic
+pydantic-settings==2.8.1
+
+# Sentence Transformers for embedding
+sentence-transformers==4.1.0
+
+
+# Image processing
+Pillow==10.4.0
+
+# Other dependencies

@@ -1,0 +1,22 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: video_pr_app
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=docker
+    env_file:
+      - .env.docker
+    volumes:
+      - ./:/app
+      - ./output:/app/output
+      - ./uploads:/app/uploads
+    networks:
+      - video_pr_net
+
+networks:
+  video_pr_net:
+    external: true

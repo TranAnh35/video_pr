@@ -52,18 +52,24 @@ ORDER BY c.caption_embedding <-> embedding_str::vector
 LIMIT top_k
 ```
 
-## Build
+## Chạy local
+Khởi tạo file .env dựa trên file .env.example
+
+Và chạy chương trình với câu lệnh:
+```
+uvicorn app.web.application:app
+```
+
+## Build docker
 
 - Do MinIO cần phải có tài khoản và phải cấu hình ACCESS_KEY và SECRET_KEY. Nên phải tự cấu hình container.
 - Hiện tại đang lỗi thi khởi tạo PostgreSQL container trong docker-compose. Nên đang phải khởi tạo riêng
 
-Khởi tạo file .env.docker để thực hiện kết nối với db chính xác:
+Khởi tạo file .env.docker từ .env.example và để thực hiện kết nối với db chính xác cần chinh sửa:
 ```
-POSTGRES_DB="pgvector"
-POSTGRES_USER="postgres"
-POSTGRES_PASSWORD="postgres"
-POSTGRES_HOST="pgvector-db" # Tên container
-POSTGRES_PORT="5432"
+MINIO_HOST="name_minio_container"
+
+POSTGRES_HOST="name_db_container"
 ```
 
 Các container được kết nối thông qua network *video_pr_net*

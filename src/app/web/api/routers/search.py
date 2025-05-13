@@ -1,11 +1,8 @@
-"""
-Advanced search related endpoints.
-"""
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
-from app.database.postgresql import search_image_by_caption
+from app.database.postgresql import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -16,18 +13,17 @@ async def semantic_search(
     limit: int = Query(10, description="Maximum number of results to return", ge=1, le=100)
 ):
     """
-    Tìm kiếm ngữ nghĩa (semantic search) các hình ảnh dựa trên truy vấn văn bản
-    
+    Perform semantic search on images based on a text query.
+
     Args:
-        query: Chuỗi văn bản để tìm kiếm
-        limit: Số lượng kết quả tối đa
-    
+        query: Text string to search for relevant images.
+        limit: Maximum number of search results to return.
+
     Returns:
-        JSON response với các hình ảnh liên quan
+        A JSON response with matched images and metadata.
     """
     try:
-        # Thực hiện tìm kiếm ngữ nghĩa
-        results = search_image_by_caption(query, top_k=limit)
+        results = get_db().search_image_by_caption(query, top_k=limit)
         
         if not results:
             return JSONResponse(content={
@@ -37,7 +33,6 @@ async def semantic_search(
                 "results": []
             })
         
-        # Chuẩn bị kết quả trả về
         formatted_results = []
         for result in results:
             image_id, image_key = result
@@ -65,23 +60,21 @@ async def bulk_search(
     limit_per_query: int = Query(5, description="Maximum results per query", ge=1, le=20)
 ):
     """
-    Thực hiện tìm kiếm hàng loạt với nhiều truy vấn
-    
+    Perform bulk semantic search for multiple queries.
+
     Args:
-        queries: Danh sách các chuỗi tìm kiếm
-        limit_per_query: Số lượng kết quả tối đa cho mỗi truy vấn
-    
+        queries: A list of search strings.
+        limit_per_query: Maximum number of results to return for each query.
+
     Returns:
-        JSON response với kết quả từ mỗi truy vấn
+        A JSON response with results for each query.
     """
     try:
         results = {}
         
         for query in queries:
-            # Tìm kiếm cho từng query
-            search_results = search_image_by_caption(query, top_k=limit_per_query)
+            search_results = get_db().search_image_by_caption(query, top_k=limit_per_query)
             
-            # Định dạng kết quả
             formatted_results = []
             for result in search_results:
                 image_id, image_key = result
@@ -91,7 +84,6 @@ async def bulk_search(
                     "preview_url": f"/api/images/view/{image_key}",
                 })
             
-            # Lưu kết quả của truy vấn này
             results[query] = {
                 "count": len(formatted_results),
                 "results": formatted_results

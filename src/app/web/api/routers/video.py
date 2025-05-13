@@ -13,14 +13,12 @@ from app.utils.video_processor import process_video
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Thư mục lưu trữ 
 UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("output")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Cấu hình
-MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500MB cho video
+MAX_VIDEO_SIZE = 500 * 1024 * 1024
 
 @router.post("/process-video/", summary="Process a video file to detect scenes and extract frames")
 async def process_video_endpoint(file: UploadFile = File(...), threshold: float = 0.3):
@@ -77,7 +75,6 @@ async def process_video_endpoint(file: UploadFile = File(...), threshold: float 
             return JSONResponse(content=response)
             
         finally:
-            # Dọn dẹp thư mục tạm
             try:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception as e:

@@ -1,21 +1,15 @@
-"""
-Image upload and basic search endpoints.
-"""
 import logging
 import tempfile
 import os
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
-from typing import List
-from app.utils.connect import upload_image_and_save_caption, get_image
-from app.database.postgresql import search_image_by_caption, get_image_captions
+from app.utils.connect import get_connector
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Cấu hình
-MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB cho hình ảnh
+MAX_IMAGE_SIZE = 10 * 1024 * 1024
 
 @router.post("/upload/", summary="Upload an image with caption")
 async def upload_image(
@@ -33,32 +27,27 @@ async def upload_image(
         JSON response with upload status and image details
     """
     try:
-        # Kiểm tra kích thước file
         content = await file.read()
         if len(content) > MAX_IMAGE_SIZE:
             logger.error(f"File {file.filename} exceeds maximum size ({MAX_IMAGE_SIZE} bytes)")
             raise HTTPException(status_code=400, detail=f"File too large. Maximum size: {MAX_IMAGE_SIZE} bytes")
         
-        # Kiểm tra định dạng file
         allowed_extensions = {'.jpg', '.jpeg', '.png'}
         file_ext = Path(file.filename).suffix.lower()
         if file_ext not in allowed_extensions:
             logger.error(f"Invalid file extension {file_ext} for file {file.filename}")
             raise HTTPException(status_code=400, detail=f"Invalid file extension. Allowed: {allowed_extensions}")
         
-        # Lưu file tạm thời
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
         temp_file.write(content)
         temp_file.close()
         
         try:
-            # Upload hình ảnh và lưu caption
-            result = upload_image_and_save_caption(temp_file.name, caption)
+            result = get_connector().upload_image_and_save_caption(temp_file.name, caption)
             
             if not result:
                 raise HTTPException(status_code=500, detail="Failed to process image")
             
-            # Kiểm tra nếu file này đã tồn tại
             is_duplicate = False
             if isinstance(result, str) and result.startswith("DUPLICATE:"):
                 is_duplicate = True
@@ -67,7 +56,6 @@ async def upload_image(
             else:
                 image_key = result
             
-            # Trả về response
             return JSONResponse(content={
                 "status": "success",
                 "message": "Image uploaded successfully",
@@ -101,8 +89,7 @@ async def view_image(image_key: str):
         The image file
     """
     try:
-        # Sử dụng get_image để lấy đường dẫn đến file ảnh
-        image_path = get_image(image_key)
+        image_path = get_connector().get_image(image_key)
         
         if not image_path or not os.path.exists(image_path):
             raise HTTPException(status_code=404, detail="Image not found")

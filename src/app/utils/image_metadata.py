@@ -3,11 +3,13 @@ from PIL import Image
 
 def extract_image_metadata(image_path):
     """
-    Trích xuất metadata kỹ thuật từ file ảnh (width, height, format, size_bytes)
+    Extract technical metadata from an image file (width, height, format, size_bytes)
+    
     Args:
-        image_path (str): Đường dẫn đến file ảnh
+        image_path (str): Path to the image file
+    
     Returns:
-        dict: metadata gồm width, height, format, size_bytes
+        dict: metadata including width, height, format, size_bytes
     """
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"File not found: {image_path}")

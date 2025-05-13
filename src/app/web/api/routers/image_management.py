@@ -79,11 +79,9 @@ async def list_images(
     try:
         db = get_db()
         cursor = db.cursor
-        # Get total count
         cursor.execute("SELECT COUNT(*) FROM images")
         total = cursor.fetchone()[0]
         
-        # Get paginated results
         cursor.execute(
             """
             SELECT id, image_key, width, height, format, size_bytes

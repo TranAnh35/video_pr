@@ -1,10 +1,8 @@
 import os
 from pathlib import Path
-from typing import Optional
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 env_path = Path(__file__).resolve().parents[3] / '.env'
 load_dotenv(dotenv_path=env_path)
 
@@ -23,27 +21,9 @@ class Settings(BaseSettings):
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
     DB_PORT: str = os.getenv("DB_PORT", "5432")
     
-    # MinIO connection URL
+    # MinIO endpoint
     @property
     def minio_endpoint(self):
         return f"{self.MINIO_HOST}:{self.MINIO_PORT}"
 
-# Create settings instance
 settings = Settings()
-
-# For backward compatibility
-MINIO_CONFIG = {
-    "endpoint": settings.minio_endpoint,
-    "access_key": settings.ACCESS_KEY,
-    "secret_key": settings.SECRET_KEY,
-    "bucket_name": settings.BUCKET_NAME,
-    "secure": False
-}
-
-DB_CONFIG = {
-    "database": settings.DB_NAME,
-    "user": settings.DB_USER,
-    "password": settings.DB_PASSWORD,
-    "host": settings.DB_HOST,
-    "port": settings.DB_PORT
-}

@@ -1,7 +1,7 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from app.models.embedding import encode_text, vector_to_pg_format
-from app.config.setting import DB_CONFIG
+from app.config.setting import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,28 +11,27 @@ class PostgresDB:
     
     @classmethod
     def get_instance(cls):
-        """Singleton pattern để trả về instance duy nhất của database"""
+        """Singleton pattern to return a single instance of database"""
         if cls._instance is None:
             cls._instance = PostgresDB()
         return cls._instance
     
     def __init__(self):
-        """Khởi tạo kết nối database"""
+        """Initialize the database connection"""
         if PostgresDB._instance is not None:
-            # Nếu đã có instance, không tạo mới
             return
             
         self.conn = None
         self.cursor = None
-        self._search_cache = {}  # Cache cho kết quả tìm kiếm
+        self._search_cache = {}
         
         try:
             self.conn = psycopg2.connect(
-                dbname=DB_CONFIG["database"],
-                user=DB_CONFIG["user"], 
-                password=DB_CONFIG["password"], 
-                host=DB_CONFIG["host"],
-                port=DB_CONFIG["port"]
+                dbname=settings.DB_NAME,
+                user=settings.DB_USER, 
+                password=settings.DB_PASSWORD, 
+                host=settings.DB_HOST,
+                port=settings.DB_PORT
             )
             self.cursor = self.conn.cursor()
             logger.info("PostgreSQL connection established")
@@ -41,11 +40,11 @@ class PostgresDB:
             print("Continuing without database connection...")
     
     def is_connected(self):
-        """Kiểm tra kết nối có khả dụng không"""
+        """Check if the database connection is available"""
         return self.conn is not None and self.cursor is not None
     
     def init_db(self):
-        """Khởi tạo cấu trúc database nếu chưa tồn tại"""
+        """Initialize the database structure if it doesn't exist"""
         if not self.is_connected():
             print("No database connection available. Can't initialize database.")
             return
@@ -65,7 +64,6 @@ class PostgresDB:
                 print("Will create tables without vector support")
             
             if has_vector:
-                # Tạo bảng images chỉ lưu thông tin về image
                 self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS images (
                     id SERIAL PRIMARY KEY,
@@ -78,7 +76,6 @@ class PostgresDB:
                 """)
                 logger.info("Created images table")
                 
-                # Tạo bảng captions để lưu nhiều caption cho mỗi image
                 self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS captions (
                     id SERIAL PRIMARY KEY,
@@ -129,26 +126,24 @@ class PostgresDB:
             logger.error(f"Error initializing database: {e}")
     
     def save_image(self, image_key, image_metadata, caption, with_embeding=True):
-        """Lưu thông tin hình ảnh và caption vào database"""
+        """Save image and caption information into the database"""
         logger.info(f"Saving image: key={image_key}, caption='{caption}'")
-        # Clear cache khi có một hình ảnh hoặc caption mới được lưu
         self._search_cache.clear()
         
         if not self.is_connected():
-            print("No database connection available. Can't save image data.")
+            logger.error("No database connection available. Can't save image data.")
             return False
         
         self.conn.rollback()
             
         try:
-            # Kiểm tra xem image đã tồn tại chưa
             self.cursor.execute(
                 "SELECT id FROM images WHERE image_key = %s",
                 (image_key,)
             )
             image_result = self.cursor.fetchone()
             
-            # Nếu image chưa tồn tại, thêm mới
+            # If the image does not exist, add it
             if not image_result:
                 self.cursor.execute(
                     "INSERT INTO images (image_key, width, height, format, size_bytes) VALUES (%s, %s, %s, %s, %s) RETURNING id",
@@ -164,12 +159,10 @@ class PostgresDB:
             else:
                 image_id = image_result[0]
             
-            # Thêm caption mới cho image
+            # Add new caption for the image
             if with_embeding:
-                # Tạo embedding vector từ caption
                 embedding = encode_text(caption)
                 
-                # Chuyển embedding thành chuỗi định dạng PostgreSQL VECTOR
                 embedding_str = vector_to_pg_format(embedding)
                 
                 self.cursor.execute(
@@ -184,19 +177,19 @@ class PostgresDB:
                 
             self.conn.commit()
             
-            logger.info(f"Đã lưu hình ảnh với key: {image_key}")
+            logger.info(f"Image saved successfully with key: {image_key}")
             return True
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            logger.error(f"Lỗi khi lưu hình ảnh: {e}")
+            logger.error(f"Error saving image: {e}")
             return False
 
     def get_image_captions(self, image_key):
-        """Lấy tất cả caption của một hình ảnh"""
+        """Get all captions for a specific image"""
         logger.debug(f"Getting captions for image: key={image_key}")
         if not self.is_connected():
-            print("No database connection available. Can't get image captions.")
+            logger.error("No database connection available. Can't get image captions.")
             return []
         
         self.conn.rollback()
@@ -216,37 +209,34 @@ class PostgresDB:
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            logger.error(f"Lỗi khi lấy caption: {e}")
+            logger.error(f"Error getting captions: {e}")
             return []
     
     def search_image_by_caption(self, caption, top_k=1):
-        """Tìm kiếm hình ảnh dựa trên caption"""        
+        """Search images based on caption"""        
         logger.info(f"Searching images by caption: '{caption}' (top_k={top_k})")
-        # Kiểm tra cache
+        # Check cache
         cache_key = f"{caption}:{top_k}"
         if cache_key in self._search_cache:
             result = self._search_cache[cache_key]
-            logger.debug(f"Cache hit: Sử dụng kết quả tìm kiếm từ cache cho caption: '{caption}'")
+            logger.debug(f"Cache hit: Using search results from cache for caption: '{caption}'")
             return result
         
         if not self.is_connected():
-            print("No database connection available. Can't search images.")
+            logger.error("No database connection available. Can't search images.")
             return []
         
         self.conn.rollback()
     
         try:
-            # Tạo embedding vector từ caption
             embedding = encode_text(caption)
             
-            # Chuyển embedding thành chuỗi định dạng PostgreSQL VECTOR
             embedding_str = vector_to_pg_format(embedding)
             
             import time
 
             start_time = time.time()
 
-            # Truy vấn tìm kiếm hình ảnh dựa trên độ tương đồng với vector embedding
             self.cursor.execute(
                 """
                 SELECT i.id, i.image_key
@@ -262,27 +252,28 @@ class PostgresDB:
             results = self.cursor.fetchall()
             end_time = time.time()
 
-            logger.info(f"Thời gian tìm kiếm trong database: {end_time - start_time:.6f} giây")
+            logger.info(f"Search results: {results}")
+            logger.info(f"Time to search in database: {end_time - start_time:.6f} seconds")
 
             if not results:
-                logger.info("Không tìm thấy hình ảnh phù hợp.")
+                logger.info("No matching images found.")
                 return []
             
-            # Lưu kết quả vào cache
+            # Save results to cache
             self._search_cache[cache_key] = results
                 
             return results
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            logger.error(f"Lỗi khi tìm kiếm hình ảnh: {e}")
+            logger.error(f"Error searching images: {e}")
             return []
     
     def check_image_exists(self, image_key):
-        """Kiểm tra xem hình ảnh đã tồn tại trong database chưa"""
+        """Check if the image exists in the database"""
         logger.debug(f"Checking if image exists: key={image_key}")
         if not self.is_connected():
-            print("No database connection available. Can't check image existence.")
+            logger.error("No database connection available. Can't check image existence.")
             return False
         
         self.conn.rollback()
@@ -297,20 +288,19 @@ class PostgresDB:
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            logger.error(f"Lỗi khi kiểm tra sự tồn tại của hình ảnh: {e}")
+            logger.error(f"Error checking image existence: {e}")
             return False
     
     def add_caption_to_image(self, image_key, caption, with_embeding=True):
-        """Thêm caption mới cho hình ảnh đã tồn tại"""
+        """Add new caption to an existing image"""
         logger.info(f"Adding caption to image: key={image_key}, caption='{caption}'")
         if not self.is_connected():
-            print("No database connection available. Can't add caption.")
+            logger.error("No database connection available. Can't add caption.")
             return False
         
         self.conn.rollback()
         
         try:
-            # Lấy image_id từ image_key
             self.cursor.execute(
                 "SELECT id FROM images WHERE image_key = %s",
                 (image_key,)
@@ -318,27 +308,23 @@ class PostgresDB:
             
             result = self.cursor.fetchone()
             if not result:
-                print(f"Không tìm thấy hình ảnh với key: {image_key}")
+                logger.info(f"Image not found with key: {image_key}")
                 return False
                 
             image_id = result[0]
             
-            # Kiểm tra xem caption đã tồn tại cho hình ảnh này chưa
             self.cursor.execute(
                 "SELECT 1 FROM captions WHERE image_id = %s AND caption = %s",
                 (image_id, caption)
             )
             
             if self.cursor.fetchone():
-                print(f"Caption này đã tồn tại cho hình ảnh với key: {image_key}")
+                logger.info(f"Caption already exists for image with key: {image_key}")
                 return True
                 
-            # Thêm caption mới
             if with_embeding:
-                # Tạo embedding vector từ caption
                 embedding = encode_text(caption)
                 
-                # Chuyển embedding thành chuỗi định dạng PostgreSQL VECTOR
                 embedding_str = vector_to_pg_format(embedding)
                 
                 self.cursor.execute(
@@ -352,28 +338,26 @@ class PostgresDB:
                 )
                 
             self.conn.commit()
-            print(f"Đã thêm caption mới cho hình ảnh với key: {image_key}")
+            logger.info(f"Caption added successfully for image with key: {image_key}")
             return True
             
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            print(f"Lỗi khi thêm caption: {e}")
+            logger.error(f"Error adding caption: {e}")
             return False
 
     def __del__(self):
-        """Hủy đối tượng, đóng kết nối"""
+        """Destroy the object and close the connection"""
         try:
             if self.cursor:
                 self.cursor.close()
             if self.conn:
                 self.conn.close()
-            print("PostgreSQL connection closed")
+            logger.info("PostgreSQL connection closed")
         except Exception as e:
-            print(f"Error closing PostgreSQL connection: {e}")
+            logger.error(f"Error closing PostgreSQL connection: {e}")
 
-
-# ---------- Compatibility functions for existing code ----------
 
 # Singleton instance
 _db_instance = None
@@ -384,27 +368,3 @@ def get_db():
     if _db_instance is None:
         _db_instance = PostgresDB.get_instance()
     return _db_instance
-
-def init_db():
-    """Initialize database (compatibility function)"""
-    get_db().init_db()
-
-def save_image(image_key, metadata, caption, with_embeding=True):
-    """Save image (compatibility function)"""
-    return get_db().save_image(image_key, metadata, caption, with_embeding=with_embeding)
-
-def search_image_by_caption(caption, top_k=1):
-    """Search image by caption (compatibility function)"""
-    return get_db().search_image_by_caption(caption, top_k)
-
-def get_image_captions(image_key):
-    """Get all captions for an image (compatibility function)"""
-    return get_db().get_image_captions(image_key)
-
-def check_image_exists(image_key):
-    """Check if an image exists in the database (compatibility function)"""
-    return get_db().check_image_exists(image_key)
-
-def add_caption_to_image(image_key, caption, with_embeding=True):
-    """Add a new caption to an existing image (compatibility function)"""
-    return get_db().add_caption_to_image(image_key, caption, with_embeding)

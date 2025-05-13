@@ -16,11 +16,11 @@ def get_model_embedder(model_name="all-MiniLM-L6-v2"):
 
 def encode_text(text, model_name="all-MiniLM-L6-v2"):
     """
-    Mã hóa một đoạn văn bản thành vector embedding
+    Encode a text into vector embedding
     
     Args:
-        text (str): Văn bản cần mã hóa
-        model_name (str, optional): Tên của model. Mặc định là "all-MiniLM-L6-v2"
+        text (str): Text to encode
+        model_name (str, optional): Name of the model. Default is "all-MiniLM-L6-v2"
         
     Returns:
         numpy.ndarray: Vector embedding
@@ -33,13 +33,13 @@ def encode_text(text, model_name="all-MiniLM-L6-v2"):
 
 def vector_to_pg_format(vector):
     """
-    Chuyển đổi vector numpy thành chuỗi định dạng PostgreSQL VECTOR
+    Convert numpy vector to PostgreSQL VECTOR format
     
     Args:
         vector (numpy.ndarray): Vector embedding
         
     Returns:
-        str: Chuỗi định dạng '[x1,x2,x3,...]'
+        str: String in PostgreSQL VECTOR format '[x1,x2,x3,...]'
     """
     result = "[" + ",".join([str(float(x)) for x in vector]) + "]"
     return result

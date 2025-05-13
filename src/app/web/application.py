@@ -22,7 +22,6 @@ async def lifespan(app: FastAPI):
         logger.error("FFmpeg not found. Please ensure FFmpeg is installed.")
         raise RuntimeError("FFmpeg not found")
     
-    # Create directories if they don't exist
     for dir_path in [UPLOAD_DIR, OUTPUT_DIR]:
         try:
             dir_path.mkdir(parents=True, exist_ok=True)
@@ -43,11 +42,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure directories
 UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("output")
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -56,7 +53,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Middleware cho request timing
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
@@ -65,7 +61,6 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
-# Include API router
 app.include_router(api_router)
 
 @app.get("/", summary="Root endpoint", tags=["Root"])

@@ -2,9 +2,9 @@ import os
 import hashlib
 from app.database.minio import get_storage, MinioStorage
 import logging
-from app.database.postgresql import get_db, save_image
+from app.database.postgresql import get_db
 from app.utils.image_metadata import extract_image_metadata
-from app.config.setting import MINIO_CONFIG
+from app.config.setting import settings
 
 import logging
 logger = logging.getLogger(__name__)
@@ -14,34 +14,33 @@ class ImageConnector:
     
     @classmethod
     def get_instance(cls):
-        """Singleton pattern để trả về instance duy nhất"""
+        """Singleton pattern to return a single instance"""
         if cls._instance is None:
             cls._instance = ImageConnector()
         return cls._instance
     
     def __init__(self):
-        """Khởi tạo connector"""
+        """Initialize the connector"""
         if ImageConnector._instance is not None:
-            # Nếu đã có instance, không tạo mới
             return
         
-        self._image_cache = {}  # Cache cho các kết quả tìm kiếm
+        self.storage = get_storage()
+        self.db = get_db()
+        self._image_cache = {}
     
     def _calculate_file_hash(self, file_path):
         """
-        Tính toán hash SHA-256 từ nội dung file
+        Calculate SHA-256 hash from file content
         
         Args:
-            file_path: Đường dẫn đến file cần tính hash
+            file_path: Path to the file to calculate hash
             
         Returns:
-            str: Chuỗi hex hash SHA-256 của file
+            str: Hex SHA-256 hash of the file
         """
         sha256_hash = hashlib.sha256()
         
-        # Đọc và hash file theo từng khối để xử lý file lớn hiệu quả
         with open(file_path, "rb") as f:
-            # Đọc file theo từng khối 64kb
             for byte_block in iter(lambda: f.read(65536), b""):
                 sha256_hash.update(byte_block)
                 
@@ -49,19 +48,19 @@ class ImageConnector:
     
     def upload_image_and_save_caption(self, image_path, caption):
         """
-        Upload hình ảnh lên Minio và lưu thông tin vào PostgreSQL
+        Upload image to Minio and save caption to PostgreSQL
         
         Args:
-            image_path: Đường dẫn đến file hình ảnh
-            caption: Caption cho hình ảnh
+            image_path: Path to the image file
+            caption: Caption for the image
         
         Returns:
-            str: ID của hình ảnh trên Minio hoặc None nếu thất bại
-            str: "DUPLICATE:{unique_key}" nếu file đã tồn tại
+            str: ID of the image on Minio or None if failed
+            str: "DUPLICATE:{unique_key}" if file already exists in database
         """
         try:
             if not os.path.exists(image_path):
-                logger.error(f"File không tồn tại: {image_path}")
+                logger.error(f"File does not exist: {image_path}")
                 return None
             
             file_name = os.path.basename(image_path)
@@ -77,43 +76,41 @@ class ImageConnector:
             skip_check = os.environ.get("SKIP_DUPLICATE_CHECK", "0") == "1"
             
             if not skip_check:
-                db = get_db()
-                if db.is_connected():
-                    exists = db.check_image_exists(unique_key)
+                if self.db.is_connected():
+                    exists = self.db.check_image_exists(unique_key)
                     if exists:
-                        logger.info(f"Hình ảnh '{file_name}' đã tồn tại trong database với hash: {content_hash}")
-                        db.add_caption_to_image(unique_key, caption)
+                        logger.info(f"Image '{file_name}' already exists in database with hash: {content_hash}")
+                        self.db.add_caption_to_image(unique_key, caption)
                         return f"DUPLICATE:{unique_key}"
             
-            storage = MinioStorage.get_instance()
-            success = storage.upload_object(MINIO_CONFIG["bucket_name"], unique_key, image_path)
+            success = self.storage.upload_object(settings.BUCKET_NAME, unique_key, image_path)
             
             if not success:
-                logger.error(f"Không thể upload hình ảnh: {image_path}")
+                logger.error(f"Failed to upload image: {image_path}")
                 return None
             
             metadata = extract_image_metadata(image_path)
             
-            save_image(unique_key, metadata, caption)
-            logger.info(f"Đã upload và lưu metadata cho ảnh: {unique_key}")
+            self.db.save_image(unique_key, metadata, caption)
+            logger.info(f"Image uploaded and metadata saved: {unique_key}")
             
             return unique_key
         except Exception as e:
-            logger.error(f"Lỗi khi upload hình ảnh và lưu caption: {e}")
+            logger.error(f"Failed to upload image and save caption: {e}")
             return None
     
     def get_image(self, query):
-        """Lấy hình ảnh từ database dựa trên caption hoặc image_key"""
+        """Get image from database based on caption or image_key"""
+        logger.info(f"Getting image for query: {query}")
         
         if len(query) > 40 and '.' in query:
-            storage = get_storage()
-            image_path = storage.get_object(MINIO_CONFIG["bucket_name"], query)
+            image_path = self.storage.get_object(settings.BUCKET_NAME, query)
             
             if image_path:
                 self._image_cache[query] = image_path
-                logger.info(f"Lấy ảnh trực tiếp theo image_key: {query}")
+                logger.info(f"Image retrieved directly by image_key: {query}")
             else:
-                logger.warning(f"Không tìm thấy ảnh với image_key: {query}")
+                logger.warning(f"Image not found with image_key: {query}")
             
             return image_path
         
@@ -121,36 +118,30 @@ class ImageConnector:
             cache_path = self._image_cache[query]
             if os.path.exists(cache_path):
                 result = cache_path
-                logger.info(f"Image cache hit: Sử dụng hình ảnh từ cache: {cache_path}")
+                logger.info(f"Image cache hit: Using cached image: {cache_path}")
                 return result
             else:
                 del self._image_cache[query]
-                logger.warning(f"Cache bị stale, file không còn tồn tại: {cache_path}")
+                logger.warning(f"Cache stale, file no longer exists: {cache_path}")
         
-        db = get_db()
-        storage = get_storage()
-        
-        results = db.search_image_by_caption(query)
+        results = self.db.search_image_by_caption(query)
         
         if not results:
-            logger.warning(f"Không tìm thấy ảnh phù hợp với caption: '{query}'")
+            logger.warning(f"Image not found with caption: '{query}'")
             return None
         
         image_key = results[0][1]
-        logger.info(f"Tìm thấy ảnh với key: {image_key}")
+        logger.info(f"Found image with key: {image_key}")
         
-        image_path = storage.get_object(MINIO_CONFIG["bucket_name"], image_key)
+        image_path = self.storage.get_object(settings.BUCKET_NAME, image_key)
         
         if image_path:
             self._image_cache[query] = image_path
-            logger.info(f"Đã lấy ảnh từ MinIO và cache lại với caption: '{query}'")
+            logger.info(f"Image retrieved from MinIO and cached with caption: '{query}'")
         else:
-            logger.error(f"Không lấy được ảnh từ MinIO với key: {image_key}")
+            logger.error(f"Failed to retrieve image from MinIO with key: {image_key}")
         
         return image_path
-
-
-# ---------- Compatibility functions for existing code ----------
 
 # Singleton instance
 _connector_instance = None
@@ -161,11 +152,3 @@ def get_connector():
     if _connector_instance is None:
         _connector_instance = ImageConnector.get_instance()
     return _connector_instance
-
-def upload_image_and_save_caption(image_path, caption):
-    """Upload image and save caption (compatibility function)"""
-    return get_connector().upload_image_and_save_caption(image_path, caption)
-
-def get_image(caption):
-    """Get image by caption (compatibility function)"""
-    return get_connector().get_image(caption)

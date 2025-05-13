@@ -1,6 +1,6 @@
 import os
 # Tắt các cảnh báo TensorFlow
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 0=all, 1=info, 2=warning, 3=error
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 0=all, 1=info, 2=warning, 3=error
 from sentence_transformers import SentenceTransformer
 
 # Singleton pattern cho model embedding

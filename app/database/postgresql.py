@@ -1,7 +1,6 @@
 import psycopg2
-from psycopg2.extras import RealDictCursor
 from app.models.embedding import encode_text, vector_to_pg_format
-from app.config.setting import settings
+from app.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)

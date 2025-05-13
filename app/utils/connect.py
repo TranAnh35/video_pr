@@ -4,7 +4,7 @@ from app.database.minio import get_storage, MinioStorage
 import logging
 from app.database.postgresql import get_db
 from app.utils.image_metadata import extract_image_metadata
-from app.config.setting import settings
+from app.config.settings import settings
 
 import logging
 logger = logging.getLogger(__name__)

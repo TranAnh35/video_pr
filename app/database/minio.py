@@ -1,7 +1,7 @@
 import logging
 from minio import Minio
 import tempfile
-from app.config.setting import settings
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 

@@ -26,11 +26,11 @@ class PostgresDB:
         
         try:
             self.conn = psycopg2.connect(
-                dbname=settings.DB_NAME,
-                user=settings.DB_USER, 
-                password=settings.DB_PASSWORD, 
-                host=settings.DB_HOST,
-                port=settings.DB_PORT
+                dbname=settings.POSTGRES_DB,
+                user=settings.POSTGRES_USER, 
+                password=settings.POSTGRES_PASSWORD, 
+                host=settings.POSTGRES_HOST,
+                port=settings.POSTGRES_PORT
             )
             self.cursor = self.conn.cursor()
             logger.info("PostgreSQL connection established")

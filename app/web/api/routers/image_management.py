@@ -2,10 +2,14 @@
 Image management related endpoints.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import List, Optional
+import tempfile
+import os
+import hashlib
 from app.database.postgresql import get_db
+from app.utils.connect import get_connector
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -107,4 +111,91 @@ async def list_images(
         
     except Exception as e:
         logger.error(f"Error listing images: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/check-exists/", summary="Check if an image already exists in the dataset")
+async def check_image_exists(
+    file: UploadFile = File(...),
+):
+    """
+    Check if an uploaded image already exists in the dataset
+    
+    Args:
+        file: The image file to check
+        
+    Returns:
+        JSON response with existence status and image details if found
+    """
+    try:
+        content = await file.read()
+        
+        # Create a temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1])
+        temp_file.write(content)
+        temp_file.close()
+        
+        try:
+            # Calculate hash of the file
+            sha256_hash = hashlib.sha256()
+            with open(temp_file.name, "rb") as f:
+                for byte_block in iter(lambda: f.read(65536), b""):
+                    sha256_hash.update(byte_block)
+            content_hash = sha256_hash.hexdigest()
+            
+            # Determine file extension
+            file_ext = os.path.splitext(file.filename)[1]
+            if not file_ext:
+                file_ext = ".jpg"  # Default if no extension provided
+            
+            # Create unique key in same format as storage system
+            unique_key = f"{content_hash}{file_ext}"
+            
+            # Check if image exists in database
+            db = get_db()
+            exists = db.check_image_exists(unique_key)
+            
+            if exists:
+                # Get additional image information
+                cursor = db.cursor
+                cursor.execute(
+                    """
+                    SELECT id, image_key, width, height, format, size_bytes
+                    FROM images
+                    WHERE image_key = %s
+                    """,
+                    (unique_key,)
+                )
+                result = cursor.fetchone()
+                
+                # Convert to dict with column names as keys
+                columns = [desc[0] for desc in cursor.description]
+                image_data = dict(zip(columns, result))
+                
+                # Get the image captions as well
+                captions = db.get_image_captions(unique_key)
+                caption_list = [caption[1] for caption in captions]
+                
+                return JSONResponse(content={
+                    "status": "success",
+                    "exists": True,
+                    "message": "Image already exists in dataset",
+                    "image_data": image_data,
+                    "captions": caption_list
+                })
+            else:
+                return JSONResponse(content={
+                    "status": "success",
+                    "exists": False,
+                    "message": "Image does not exist in dataset",
+                    "calculated_key": unique_key
+                })
+        finally:
+            # Clean up the temporary file
+            try:
+                os.unlink(temp_file.name)
+            except Exception as e:
+                logger.error(f"Error removing temp file: {str(e)}")
+                
+    except Exception as e:
+        logger.error(f"Error checking image existence: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

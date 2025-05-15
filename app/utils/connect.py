@@ -1,6 +1,6 @@
 import os
 import hashlib
-from app.database.minio import get_storage, MinioStorage
+from app.database.minio import get_storage
 import logging
 from app.database.postgresql import get_db
 from app.utils.image_metadata import extract_image_metadata
@@ -56,12 +56,20 @@ class ImageConnector:
         
         Returns:
             str: ID of the image on Minio or None if failed
-            str: "DUPLICATE:{unique_key}" if file already exists in database
+            str: "DUPLICATE_IMAGE:{unique_key}" if image already exists
+            str: "DUPLICATE_CAPTION:{caption}" if caption already exists
         """
         try:
             if not os.path.exists(image_path):
                 logger.error(f"File does not exist: {image_path}")
                 return None
+            
+            # First check if caption already exists for any image
+            if self.db.is_connected():
+                caption_exists = self.db.check_caption_exists(caption)
+                if caption_exists:
+                    logger.info(f"Caption '{caption}' already exists in database")
+                    return f"DUPLICATE_CAPTION:{caption}"
             
             file_name = os.path.basename(image_path)
             
@@ -80,8 +88,8 @@ class ImageConnector:
                     exists = self.db.check_image_exists(unique_key)
                     if exists:
                         logger.info(f"Image '{file_name}' already exists in database with hash: {content_hash}")
-                        self.db.add_caption_to_image(unique_key, caption)
-                        return f"DUPLICATE:{unique_key}"
+                        # We don't need to add caption since we've already checked it's not a duplicate
+                        return f"DUPLICATE_IMAGE:{unique_key}"
             
             success = self.storage.upload_object(settings.BUCKET_NAME, unique_key, image_path)
             

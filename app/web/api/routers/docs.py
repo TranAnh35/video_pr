@@ -49,6 +49,26 @@ async def list_endpoints():
             "path": "/api/search/bulk/",
             "method": "GET",
             "description": "Bulk search for multiple queries"
+        },
+        {
+            "path": "/api/search/image/",
+            "method": "GET",
+            "description": "Get image file directly based on text query"
+        },
+        {
+            "path": "/api/search/gallery/",
+            "method": "GET",
+            "description": "Display a gallery of images matching the query"
+        },
+        {
+            "path": "/api/search/urls/",
+            "method": "GET",
+            "description": "Get URLs of images matching the query"
+        },
+        {
+            "path": "/api/search/embed/",
+            "method": "GET",
+            "description": "Get HTML for embedding images directly in Swagger UI"
         }
     ]
     

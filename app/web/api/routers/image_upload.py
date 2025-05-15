@@ -49,20 +49,41 @@ async def upload_image(
                 raise HTTPException(status_code=500, detail="Failed to process image")
             
             is_duplicate = False
-            if isinstance(result, str) and result.startswith("DUPLICATE:"):
-                is_duplicate = True
-                image_key = result.replace("DUPLICATE:", "")
-                logger.info(f"Duplicate image detected, adding caption to existing image: {image_key}")
-            else:
-                image_key = result
+            duplicate_type = None
+            image_key = result
             
-            return JSONResponse(content={
+            if isinstance(result, str):
+                if result.startswith("DUPLICATE_IMAGE:"):
+                    is_duplicate = True
+                    duplicate_type = "image"
+                    image_key = result.replace("DUPLICATE_IMAGE:", "")
+                    logger.info(f"Duplicate image detected: {image_key}")
+                elif result.startswith("DUPLICATE_CAPTION:"):
+                    is_duplicate = True
+                    duplicate_type = "caption"
+                    image_key = None  # We don't have an image key for caption duplicates
+                    logger.info(f"Duplicate caption detected: {caption}")
+            
+            response = {
                 "status": "success",
-                "message": "Image uploaded successfully",
-                "image_key": image_key,
+                "message": "Image processed successfully",
                 "is_duplicate": is_duplicate,
                 "caption": caption
-            })
+            }
+            
+            if duplicate_type:
+                response["duplicate_type"] = duplicate_type
+                
+                if duplicate_type == "image":
+                    response["message"] = "Image already exists in the database"
+                    response["image_key"] = image_key
+                elif duplicate_type == "caption":
+                    response["message"] = "Caption already exists in the database"
+            else:
+                response["image_key"] = image_key
+                response["message"] = "Image uploaded successfully"
+            
+            return JSONResponse(content=response)
             
         finally:
             try:

@@ -133,6 +133,11 @@ class PostgresDB:
             logger.error("No database connection available. Can't save image data.")
             return False
         
+        # Check if caption already exists
+        if self.check_caption_exists(caption):
+            logger.info(f"Caption '{caption}' already exists in the database. Skipping save.")
+            return False
+        
         self.conn.rollback()
             
         try:
@@ -211,11 +216,11 @@ class PostgresDB:
             logger.error(f"Error getting captions: {e}")
             return []
     
-    def search_image_by_caption(self, caption, top_k=1):
+    def search_image_by_caption(self, caption, top_k=1, exclude_image_keys=None):
         """Search images based on caption"""        
-        logger.info(f"Searching images by caption: '{caption}' (top_k={top_k})")
+        logger.info(f"Searching images by caption: '{caption}' (top_k={top_k}, exclude={exclude_image_keys})")
         # Check cache
-        cache_key = f"{caption}:{top_k}"
+        cache_key = f"{caption}:{top_k}:{exclude_image_keys}"
         if cache_key in self._search_cache:
             result = self._search_cache[cache_key]
             logger.debug(f"Cache hit: Using search results from cache for caption: '{caption}'")
@@ -236,16 +241,32 @@ class PostgresDB:
 
             start_time = time.time()
 
-            self.cursor.execute(
-                """
-                SELECT i.id, i.image_key
-                FROM images i
-                JOIN captions c ON i.id = c.image_id
-                ORDER BY c.caption_embedding <-> %s::vector
-                LIMIT %s
-                """,
-                (embedding_str, top_k)
-            )
+            if exclude_image_keys and len(exclude_image_keys) > 0:
+                placeholders = ', '.join(['%s'] * len(exclude_image_keys))
+                self.cursor.execute(
+                    f"""
+                    SELECT i.id, i.image_key
+                    FROM images i
+                    JOIN captions c ON i.id = c.image_id
+                    WHERE i.image_key NOT IN ({placeholders})
+                    GROUP BY i.id, i.image_key
+                    ORDER BY MIN(c.caption_embedding <-> %s::vector)
+                    LIMIT %s
+                    """,
+                    (*exclude_image_keys, embedding_str, top_k)
+                )
+            else:
+                self.cursor.execute(
+                    """
+                    SELECT i.id, i.image_key
+                    FROM images i
+                    JOIN captions c ON i.id = c.image_id
+                    GROUP BY i.id, i.image_key
+                    ORDER BY MIN(c.caption_embedding <-> %s::vector)
+                    LIMIT %s
+                    """,
+                    (embedding_str, top_k)
+                )
 
             
             results = self.cursor.fetchall()
@@ -290,11 +311,38 @@ class PostgresDB:
             logger.error(f"Error checking image existence: {e}")
             return False
     
+    def check_caption_exists(self, caption):
+        """Check if the caption already exists for any image in the database"""
+        logger.debug(f"Checking if caption exists: '{caption}'")
+        if not self.is_connected():
+            logger.error("No database connection available. Can't check caption existence.")
+            return False
+        
+        self.conn.rollback()
+        
+        try:
+            self.cursor.execute(
+                "SELECT 1 FROM captions WHERE caption = %s LIMIT 1",
+                (caption,)
+            )
+            
+            return self.cursor.fetchone() is not None
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            logger.error(f"Error checking caption existence: {e}")
+            return False
+    
     def add_caption_to_image(self, image_key, caption, with_embeding=True):
         """Add new caption to an existing image"""
         logger.info(f"Adding caption to image: key={image_key}, caption='{caption}'")
         if not self.is_connected():
             logger.error("No database connection available. Can't add caption.")
+            return False
+        
+        # Check if caption already exists in any image
+        if self.check_caption_exists(caption):
+            logger.info(f"Caption '{caption}' already exists in the database. Skipping addition.")
             return False
         
         self.conn.rollback()
@@ -312,15 +360,6 @@ class PostgresDB:
                 
             image_id = result[0]
             
-            self.cursor.execute(
-                "SELECT 1 FROM captions WHERE image_id = %s AND caption = %s",
-                (image_id, caption)
-            )
-            
-            if self.cursor.fetchone():
-                logger.info(f"Caption already exists for image with key: {image_key}")
-                return True
-                
             if with_embeding:
                 embedding = encode_text(caption)
                 
